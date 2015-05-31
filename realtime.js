@@ -37,6 +37,7 @@
     this.connect();
     this.objs = {};
     this.subs = {};
+    this.connected = false;
   }
   Realtime.prototype = {
     sync: function(key, obj) {
@@ -94,8 +95,9 @@
         return console.warn(err, str);
       }
 
-      for(var key in updates) {
-        var u = updates[key];
+      for(var i = 0; i < updates.length; i++) {
+        var u = updates[i];
+        var key = u.Key;
         var dst = this.objs[key];
         var src = u.Data;
         if(!src || !dst)
@@ -115,17 +117,17 @@
       }
     },
     onopen: function() {
+      this.connected = true;
       this.delay = 100;
-      console.log("connected");
       this.subscribe();
     },
     onclose: function() {
+      this.connected = false;
       this.delay *= 2;
-      console.log("disconnected, reconnecting in %sms", this.delay);
       setTimeout(this.connect.bind(this), this.delay);
     },
     onerror: function(err) {
-      console.error("websocket error: %s", err);
+      // console.error("websocket error: %s", err);
     }
   };
   //publicise

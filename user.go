@@ -15,5 +15,5 @@ type user struct {
 	id       string
 	conn     *websocket.Conn
 	versions versions
-	pending  map[key]*update
+	pending  []*update
 }

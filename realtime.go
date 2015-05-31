@@ -63,7 +63,7 @@ func (r *Realtime) flusher() {
 			if len(u.pending) > 0 {
 				b, _ := json.Marshal(u.pending)
 				u.conn.Write(b)
-				u.pending = map[key]*update{}
+				u.pending = nil
 			}
 		}
 		//sleeeepp
@@ -125,7 +125,7 @@ func (r *Realtime) serveWS(conn *websocket.Conn) {
 		id:       conn.Request().RemoteAddr,
 		conn:     conn,
 		versions: vs,
-		pending:  map[key]*update{},
+		pending:  []*update{},
 	}
 	//add and subscribe to each obj
 	r.users[u.id] = u
@@ -136,9 +136,10 @@ func (r *Realtime) serveWS(conn *websocket.Conn) {
 			return
 		}
 		obj.subscribers[u.id] = u
+		u.pending = append(u.pending, &update{
+			Key: k, Version: obj.version, Data: obj.bytes,
+		})
 	}
-	//add
-	log.Printf("user connected %s", u.id)
 	//pipe to null
 	io.Copy(ioutil.Discard, conn)
 	//remove and unsubscribe to each obj
@@ -147,7 +148,7 @@ func (r *Realtime) serveWS(conn *websocket.Conn) {
 		obj := r.objs[k]
 		delete(obj.subscribers, u.id)
 	}
-	log.Printf("user disconnected %s", u.id)
+	//disconnected
 }
 
 //embedded JS file

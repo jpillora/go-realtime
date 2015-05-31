@@ -21,14 +21,15 @@ func (o *object) check() {
 	if o.checked {
 		return
 	}
+	//mark
+	o.checked = true
 	newBytes, _ := json.Marshal(o.value)
 	//calculate change set
 	ops, _ := jsonpatch.CreatePatch(o.bytes, newBytes)
-	if len(ops) == 0 {
+	if len(o.bytes) > 0 && len(ops) == 0 {
 		return
 	}
 	delta, _ := json.Marshal(ops)
-	o.bytes = newBytes
 	prev := o.version
 	o.version++
 	for _, u := range o.subscribers {
@@ -37,18 +38,17 @@ func (o *object) check() {
 			Version: o.version,
 		}
 		//calc update - send the smallest
-		if u.versions[o.key] == prev && len(delta) < len(o.bytes) {
+		if u.versions[o.key] == prev && len(o.bytes) > 0 && len(delta) < len(o.bytes) {
 			update.Delta = true
 			update.Data = delta
 		} else {
 			update.Delta = false
-			update.Data = o.bytes
+			update.Data = newBytes
 		}
 		//insert pending update
-		u.pending[o.key] = update
+		u.pending = append(u.pending, update)
 		//user now has this version
 		u.versions[o.key] = o.version
 	}
-	//mark
-	o.checked = true
+	o.bytes = newBytes
 }
