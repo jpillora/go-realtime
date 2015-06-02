@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,13 +34,15 @@ func New(c Config) *Realtime {
 	return r
 }
 
-func NewSync(val interface{}, c Config) *Realtime {
+func NewSync(val interface{}, c Config) (*Realtime, error) {
 	r := New(c)
-	r.Sync("default", val)
-	return r
+	if err := r.Sync("default", val); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
-func Sync(val interface{}) *Realtime {
+func Sync(val interface{}) (*Realtime, error) {
 	return NewSync(val, Config{})
 }
 
@@ -117,7 +120,9 @@ func (r *Realtime) serveWS(conn *websocket.Conn) {
 	vs := versions{}
 	//only 1 decode
 	if err := json.NewDecoder(conn).Decode(&vs); err != nil {
-		log.Printf("invalid versions obj: %s", err)
+		if err != io.EOF {
+			log.Printf("invalid versions obj: %s", err)
+		}
 		return
 	}
 	//ready
@@ -152,12 +157,14 @@ func (r *Realtime) serveWS(conn *websocket.Conn) {
 }
 
 //embedded JS file
-var JS = byteServe(_realtimeJs)
+var JS = jsServe(_realtimeJs)
 
-type byteServe []byte
+type jsServe []byte
 
-func (b byteServe) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (j jsServe) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	b := []byte(j)
 	w.Header().Set("Content-Encoding", "gzip")
 	w.Header().Set("Content-Type", "text/javascript")
-	w.Write([]byte(b))
+	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+	w.Write(b)
 }

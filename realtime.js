@@ -1,9 +1,29 @@
 /* global window,WebSocket */
 // Realtime - v0.1.0 - https://github.com/jpillora/go-realtime
 // Jaime Pillora <dev@jpillora.com> - MIT Copyright 2015
-(function(window) {
+(function(window, document) {
+
+  if(!window.WebSocket)
+    return alert("go-realtime: this browser does not support WebSockets");
+
   //realtime protocol version
   var proto = "v1";
+
+  //public method
+  var realtime = function(url) {
+    var rt = new Realtime(url);
+    rts.push(rt);
+    return rt;
+  };
+  realtime.proto = proto;
+  realtime.online = true;
+  //shortcut
+  realtime.sync = function(obj) {
+    var rt = realtime();
+    rt.sync(obj);
+    return rt;
+  };
+
   //special merge - ignore $properties
   // x <- y
   var merge = function(x, y) {
@@ -23,6 +43,19 @@
     return x;
   };
 
+  var rts = [];
+  //global status change handler
+  function onstatus(event) {
+    realtime.online = navigator.onLine;
+    for(var i = 0; i < rts.length; i++) {
+      if(realtime.online && rts[i].autoretry)
+        rts[i].retry();
+    }
+  }
+  window.addEventListener('online',  onstatus);
+  window.addEventListener('offline', onstatus);
+
+  //helpers
   var events = ["message","error","open","close"];
   var loc = window.location;
   //realtime class - represents a single websocket
@@ -50,8 +83,13 @@
       this.subscribe();
     },
     connect: function() {
+      this.autoretry = true;
+      this.retry();
+    },
+    retry: function() {
+      clearTimeout(this.retry.t);
       if(this.ws)
-        this.disconnect();
+        this.cleanup();
       if(!this.delay)
         this.delay = 100;
       this.ws = new WebSocket(this.url, "rt-"+proto);
@@ -63,6 +101,10 @@
       this.ping.t = setInterval(this.ping.bind(this), 30 * 1000);
     },
     disconnect: function() {
+      this.autoretry = false;
+      this.cleanup();
+    },
+    cleanup: function(){
       if(!this.ws)
         return;
       var _this = this;
@@ -115,26 +157,29 @@
 
         this.subs[key] = u.Version;
       }
+      //successful msg resets retry counter
+      this.delay = 100;
     },
     onopen: function() {
       this.connected = true;
-      this.delay = 100;
+      if(this.onstatus) this.onstatus(true);
       this.subscribe();
     },
     onclose: function() {
       this.connected = false;
+      if(this.onstatus) this.onstatus(false);
       this.delay *= 2;
-      setTimeout(this.connect.bind(this), this.delay);
+      if(this.autoretry) {
+        this.retry.t = setTimeout(this.connect.bind(this), this.delay);
+      }
     },
     onerror: function(err) {
       // console.error("websocket error: %s", err);
     }
   };
   //publicise
-  window.realtime = function(url) {
-    return new Realtime(url);
-  };
-}(window, undefined));
+  window.realtime = realtime;
+}(window, document, undefined));
 
 /*!
 * https://github.com/Starcounter-Jack/JSON-Patch
