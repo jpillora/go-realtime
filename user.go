@@ -1,6 +1,10 @@
 package realtime
 
-import "golang.org/x/net/websocket"
+import (
+	"time"
+
+	"golang.org/x/net/websocket"
+)
 
 type versions map[key]int64
 
@@ -13,6 +17,7 @@ type update struct {
 
 type user struct {
 	id       string
+	uptime   time.Time
 	conn     *websocket.Conn
 	versions versions
 	pending  []*update

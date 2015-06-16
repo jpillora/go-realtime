@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/websocket"
@@ -29,6 +30,7 @@ func New(c Config) *Realtime {
 	r.ws = websocket.Handler(r.serveWS)
 	r.objs = map[key]*object{}
 	r.users = map[string]*user{}
+	r.userChanges = make(chan User)
 	//continually batches and sends updates
 	go r.flusher()
 	return r
@@ -49,12 +51,30 @@ func Sync(val interface{}) (*Realtime, error) {
 type Realtime struct {
 	config Config
 	ws     http.Handler
+	mut    sync.Mutex //protects objects and users
 	objs   map[key]*object
 	users  map[string]*user
+
+	watchingChanges bool
+	userChanges     chan User
+}
+
+type User struct {
+	Connected bool
+	Address   string
+}
+
+func (r *Realtime) Changes() <-chan User {
+	if r.watchingChanges {
+		panic("Already watching user changes")
+	}
+	r.watchingChanges = true
+	return r.userChanges
 }
 
 func (r *Realtime) flusher() {
 	for {
+		r.mut.Lock()
 		//calculate all updates for all users
 		for _, o := range r.objs {
 			if !o.checked {
@@ -69,6 +89,7 @@ func (r *Realtime) flusher() {
 				u.pending = nil
 			}
 		}
+		r.mut.Unlock()
 		//sleeeepp
 		time.Sleep(r.config.Throttle)
 	}
@@ -79,6 +100,7 @@ func (r *Realtime) Sync(k string, val interface{}) error {
 	if err != nil {
 		return err
 	}
+	r.mut.Lock()
 	r.objs[key(k)] = &object{
 		key:         key(k),
 		value:       val,
@@ -87,19 +109,24 @@ func (r *Realtime) Sync(k string, val interface{}) error {
 		subscribers: map[string]*user{},
 		checked:     false,
 	}
+	r.mut.Unlock()
 	return nil
 }
 
 func (r *Realtime) Update() {
+	r.mut.Lock()
 	for _, obj := range r.objs {
 		obj.checked = false
 	}
+	r.mut.Unlock()
 }
 
 func (r *Realtime) UpdateVal(k string) {
+	r.mut.Lock()
 	if obj, ok := r.objs[key(k)]; ok {
 		obj.checked = false
 	}
+	r.mut.Unlock()
 }
 
 func (r *Realtime) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -128,31 +155,50 @@ func (r *Realtime) serveWS(conn *websocket.Conn) {
 	//ready
 	u := &user{
 		id:       conn.Request().RemoteAddr,
+		uptime:   time.Now(),
 		conn:     conn,
 		versions: vs,
 		pending:  []*update{},
 	}
-	//add and subscribe to each obj
-	r.users[u.id] = u
+
+	//check objs
+	r.mut.Lock()
 	for k, _ := range vs {
-		obj, ok := r.objs[k]
-		if !ok {
+		if _, ok := r.objs[k]; !ok {
 			conn.Write([]byte("missing object: " + k))
+			r.mut.Unlock()
 			return
 		}
+	}
+	r.mut.Unlock()
+
+	//add and subscribe to each obj
+	r.mut.Lock()
+	r.users[u.id] = u
+	if r.watchingChanges {
+		r.userChanges <- User{Connected: true, Address: u.id}
+	}
+	for k, _ := range vs {
+		obj := r.objs[k]
 		obj.subscribers[u.id] = u
 		u.pending = append(u.pending, &update{
 			Key: k, Version: obj.version, Data: obj.bytes,
 		})
 	}
-	//pipe to null
+	r.mut.Unlock()
+	//block here during connection - pipe to null
 	io.Copy(ioutil.Discard, conn)
 	//remove and unsubscribe to each obj
+	r.mut.Lock()
 	delete(r.users, u.id)
+	if r.watchingChanges {
+		r.userChanges <- User{Connected: false, Address: u.id}
+	}
 	for k, _ := range vs {
 		obj := r.objs[k]
 		delete(obj.subscribers, u.id)
 	}
+	r.mut.Unlock()
 	//disconnected
 }
 
