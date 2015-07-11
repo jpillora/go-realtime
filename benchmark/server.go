@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jpillora/go-realtime"
@@ -10,19 +12,20 @@ import (
 
 type Foo struct {
 	realtime.Object
-	A, B int
-	C    []int
-	D    string
-	E    Bar
-}
-
-type Bar struct {
-	X, Y int
+	Lines []string
 }
 
 func main() {
 
-	foo := &Foo{A: 21, B: 42, D: "0"}
+	i := 0
+	const size = 1000
+
+	b, err := ioutil.ReadFile("data.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+	lines := strings.Split(string(b), "\n")
+	foo := &Foo{Lines: lines[i : size+i]}
 
 	//create a go-realtime (websockets) http.Handler
 	rt := realtime.NewHandler()
@@ -30,25 +33,16 @@ func main() {
 	rt.Add("foo", foo)
 
 	go func() {
-		i := 0
 		for {
-			//change foo
-			foo.A++
-			if i%2 == 0 {
-				foo.B--
-			}
 			i++
-			if i > 10 {
-				foo.C = foo.C[1:]
+			if size+i == len(lines) {
+				break
 			}
-			foo.C = append(foo.C, i)
-			if i%5 == 0 {
-				foo.E.Y++
-			}
+			foo.Lines = lines[i : size+i]
 			//mark updated
 			foo.Update()
 			//do other stuff...
-			time.Sleep(250 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
@@ -70,12 +64,10 @@ var indexhtml = []byte(`
 <script src="realtime.js"></script>
 <script>
 	var foo = {};
-
 	var rt = realtime("/realtime");
-
 	//keep in sync with the server
 	rt.add("foo", foo, function onupdate() {
-		out.innerHTML = JSON.stringify(foo, null, 2);
+		out.innerHTML = foo.Lines.join("\n");
 	});
 </script>
 `)

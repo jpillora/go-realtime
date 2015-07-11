@@ -18,9 +18,9 @@
   realtime.proto = proto;
   realtime.online = true;
   //shortcut
-  realtime.sync = function(obj) {
+  realtime.add = function(key, obj, onupdate) {
     var rt = realtime();
-    rt.sync(obj);
+    rt.add(key, obj, onupdate);
     return rt;
   };
 
@@ -58,7 +58,7 @@
   //helpers
   var events = ["message","error","open","close"];
   var loc = window.location;
-  //realtime class - represents a single websocket
+  //Realtime class - represents a single websocket (User on the server-side)
   function Realtime(url) {
     if(!url)
       url = "/realtime";
@@ -70,16 +70,20 @@
     this.connect();
     this.objs = {};
     this.subs = {};
+    this.onupdates = {};
     this.connected = false;
   }
   Realtime.prototype = {
-    sync: function(key, obj) {
-      if(arguments.length === 1) {
-        obj = key;
-        key = "default";
-      }
+    add: function(key, obj, onupdate) {
+      if(typeof key !== "string")
+        throw "Invalid key - must be string";
+      if(!obj || typeof obj !== "object")
+        throw "Invalid object - must be an object";
+      if(this.objs[key])
+        throw "Duplicate key - already added";
       this.objs[key] = obj;
       this.subs[key] = 0;
+      this.onupdates[key] = onupdate;
       this.subscribe();
     },
     connect: function() {
@@ -152,8 +156,10 @@
 
         if(typeof dst.$apply === "function")
           dst.$apply();
-        if(typeof dst.$onupdate === "function")
-          dst.$onupdate();
+
+        var onupdate = this.onupdates[key];
+        if(typeof onupdate === "function")
+          onupdate();
 
         this.subs[key] = u.Version;
       }

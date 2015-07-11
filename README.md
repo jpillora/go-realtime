@@ -5,36 +5,43 @@ Keep your Go structs in sync with your JS objects
 
 :warning: This project is very beta.
 
+### Features
+
+* Simple API
+* Delta updates using JSONPatch
+
 ### Usage
 
 Server
 
 ``` go
+type Foo struct {
+	realtime.Object
+	A, B int
+}
+foo := &Foo{}
 
-var foo = &Foo{...}
+//create handler and add foo to it
+rt := realtime.NewHandler()
+rt.Add("foo", foo)
+http.Handle("/realtime", rt)
 
-//publish
-rt := realtime.Sync(foo)
+//...later...
 
 //make changes
 foo.A = 42
-
 //push to client
-rt.Update()
+foo.Update()
 ```
 
 Client
 
 ``` js
-var rt = realtime();
-
 var foo = {};
-foo.$onupdate = function() {
-	//do stuff with foo...
-};
 
-//subscribe
-rt.sync(foo);
+realtime.add("foo", foo, function onupdate() {
+	//do stuff with foo...
+});
 ```
 
 See [example](example/)
