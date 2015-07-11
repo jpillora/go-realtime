@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,7 +24,7 @@ type Config struct {
 	Throttle time.Duration
 }
 
-type RealtimeHandler struct {
+type Handler struct {
 	config Config
 	ws     http.Handler
 	mut    sync.Mutex //protects object and user maps
@@ -34,16 +35,16 @@ type RealtimeHandler struct {
 	userEvents    chan *User
 }
 
-func NewHandler() *RealtimeHandler {
+func NewHandler() *Handler {
 	return NewHandlerConfig(Config{})
 }
 
-func NewHandlerConfig(c Config) *RealtimeHandler {
+func NewHandlerConfig(c Config) *Handler {
 	if c.Throttle < 15*time.Millisecond {
 		//15ms is approximately highest resolution on the JS eventloop
 		c.Throttle = 200 * time.Millisecond
 	}
-	r := &RealtimeHandler{config: c}
+	r := &Handler{config: c}
 	r.ws = websocket.Handler(r.serveWS)
 	r.objs = map[key]*Object{}
 	r.users = map[string]*User{}
@@ -53,7 +54,7 @@ func NewHandlerConfig(c Config) *RealtimeHandler {
 	return r
 }
 
-func (r *RealtimeHandler) UserEvents() <-chan *User {
+func (r *Handler) UserEvents() <-chan *User {
 	if r.watchingUsers {
 		panic("Already watching user changes")
 	}
@@ -61,25 +62,20 @@ func (r *RealtimeHandler) UserEvents() <-chan *User {
 	return r.userEvents
 }
 
-func (r *RealtimeHandler) flusher() {
+func (r *Handler) flusher() {
 	//loops at Throttle speed
 	for {
 		//compute updates for each object for each subscriber
 		//and append each update to the users pending updates
-		changed := false
 		for _, o := range r.objs {
-			if o.computeUpdate() {
-				changed = true
-			}
+			o.computeUpdate()
 		}
 		//send all pending updates
-		if changed {
-			r.mut.Lock()
-			for _, u := range r.users {
-				u.sendPending()
-			}
-			r.mut.Unlock()
+		r.mut.Lock()
+		for _, u := range r.users {
+			u.sendPending()
 		}
+		r.mut.Unlock()
 		time.Sleep(r.config.Throttle)
 	}
 }
@@ -88,17 +84,28 @@ type addable interface {
 	add(key string, val interface{}) (*Object, error)
 }
 
-func (r *RealtimeHandler) Add(k string, v interface{}) error {
+func (r *Handler) MustAdd(k string, v interface{}) {
+	if err := r.Add(k, v); err != nil {
+		panic(err)
+	}
+}
+
+func (r *Handler) Add(k string, v interface{}) error {
 	r.mut.Lock()
 	defer r.mut.Unlock()
 
+	t := reflect.TypeOf(v)
+	if t.Kind() != reflect.Ptr {
+		return fmt.Errorf("Cannot add '%s' - it is not a pointer type", k)
+	}
+
 	if _, ok := r.objs[key(k)]; ok {
-		return fmt.Errorf("Cannot add '%s' already exists", k)
+		return fmt.Errorf("Cannot add '%s' - already exists", k)
 	}
 	//access v.object via interfaces:
 	a, ok := v.(addable)
 	if !ok {
-		return fmt.Errorf("Cannot add '%s' does not embed realtime.Object", k)
+		return fmt.Errorf("Cannot add '%s' - does not embed realtime.Object", k)
 	}
 	//pass v into v.object and get v.object back out
 	o, err := a.add(k, v)
@@ -109,7 +116,7 @@ func (r *RealtimeHandler) Add(k string, v interface{}) error {
 	return nil
 }
 
-func (r *RealtimeHandler) UpdateAll() {
+func (r *Handler) UpdateAll() {
 	r.mut.Lock()
 	for _, obj := range r.objs {
 		obj.checked = false
@@ -117,7 +124,7 @@ func (r *RealtimeHandler) UpdateAll() {
 	r.mut.Unlock()
 }
 
-func (r *RealtimeHandler) Update(k string) {
+func (r *Handler) Update(k string) {
 	r.mut.Lock()
 	if obj, ok := r.objs[key(k)]; ok {
 		obj.checked = false
@@ -125,7 +132,7 @@ func (r *RealtimeHandler) Update(k string) {
 	r.mut.Unlock()
 }
 
-func (r *RealtimeHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (r *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Header.Get("Sec-Websocket-Protocol") == "rt-"+proto {
 		r.ws.ServeHTTP(w, req)
 	} else if strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
@@ -136,7 +143,7 @@ func (r *RealtimeHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *RealtimeHandler) serveWS(conn *websocket.Conn) {
+func (r *Handler) serveWS(conn *websocket.Conn) {
 
 	vs := versions{}
 	//only decode first message
@@ -158,7 +165,7 @@ func (r *RealtimeHandler) serveWS(conn *websocket.Conn) {
 
 	//add user and subscribe to each obj
 	r.mut.Lock()
-	for k, _ := range vs {
+	for k := range vs {
 		if _, ok := r.objs[k]; !ok {
 			conn.Write([]byte("missing object: " + k))
 			r.mut.Unlock()
@@ -169,12 +176,14 @@ func (r *RealtimeHandler) serveWS(conn *websocket.Conn) {
 	if r.watchingUsers {
 		r.userEvents <- u
 	}
-	for k, _ := range vs {
+	for k := range vs {
 		obj := r.objs[k]
 		obj.subscribers[u.ID] = u
+		//create initial update
 		u.pending = append(u.pending, &update{
 			Key: k, Version: obj.version, Data: obj.bytes,
 		})
+		obj.Update()
 	}
 	r.mut.Unlock()
 
@@ -188,7 +197,7 @@ func (r *RealtimeHandler) serveWS(conn *websocket.Conn) {
 	if r.watchingUsers {
 		r.userEvents <- u
 	}
-	for k, _ := range vs {
+	for k := range vs {
 		obj := r.objs[k]
 		delete(obj.subscribers, u.ID)
 	}
