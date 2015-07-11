@@ -25,12 +25,12 @@ func (o *Object) add(k string, val interface{}) (*Object, error) {
 	if o.added {
 		return nil, fmt.Errorf("already been added to a handler")
 	}
+	o.added = true
 	if b, err := json.Marshal(val); err != nil {
 		return nil, fmt.Errorf("JSON marshalling failed: %s", err)
 	} else {
 		o.bytes = b //initial state
 	}
-	o.added = true
 	o.key = key(k)
 	o.value = val
 	o.version = 1
@@ -47,7 +47,7 @@ func (o *Object) Update() {
 
 type update struct {
 	Key     key
-	Delta   bool
+	Delta   bool `json:",omitempty"`
 	Version int64
 	Data    jsonBytes
 }

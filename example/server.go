@@ -55,7 +55,6 @@ func main() {
 
 	//realtime handlers
 	http.Handle("/realtime", rt)
-	http.Handle("/realtime.js", realtime.JS)
 	//index handler
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -72,7 +71,7 @@ func main() {
 
 var indexhtml = []byte(`
 <pre id="out"></pre>
-<script src="realtime.js"></script>
+<script src="/realtime"></script>
 <script>
 	var foo = {};
 

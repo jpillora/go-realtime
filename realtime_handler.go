@@ -1,4 +1,4 @@
-//go:generate go-bindata -pkg realtime -o realtime-embed.go realtime.js
+//go:generate go-bindata -pkg realtime -o realtime_embed.go realtime.js
 
 package realtime
 
@@ -126,13 +126,10 @@ func (r *RealtimeHandler) Update(k string) {
 }
 
 func (r *RealtimeHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	p := req.Header.Get("Sec-Websocket-Protocol")
-	if p == "rt-"+proto {
+	if req.Header.Get("Sec-Websocket-Protocol") == "rt-"+proto {
 		r.ws.ServeHTTP(w, req)
-	} else if strings.HasSuffix(req.URL.Path, "realtime.js") {
-		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Set("Content-Type", "text/javascript")
-		w.Write(JS)
+	} else if strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
+		JS.ServeHTTP(w, req)
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Invalid request"))

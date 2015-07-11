@@ -3,14 +3,15 @@
 
 Keep your Go structs in sync with your JS objects
 
-:warning: This project is very beta.
+:warning: This project is in beta and the API may change
 
 ### Features
 
 * Simple API
+* Works with any JSON marshallable struct
 * Delta updates using JSONPatch
 
-### Usage
+### Quick Usage
 
 Server
 
@@ -21,9 +22,11 @@ type Foo struct {
 }
 foo := &Foo{}
 
-//create handler and add foo to it
+//create handler and add foo
 rt := realtime.NewHandler()
 rt.Add("foo", foo)
+
+//serve websockets and realtime.js client library 
 http.Handle("/realtime", rt)
 
 //...later...
@@ -39,12 +42,21 @@ Client
 ``` js
 var foo = {};
 
-realtime.add("foo", foo, function onupdate() {
+var rt = realtime("/realtime");
+
+rt.add("foo", foo, function onupdate() {
 	//do stuff with foo...
 });
 ```
 
-See [example](example/)
+### Example
+
+See [example](example/) which is running live here https://go-realtime-demo.herokuapp.com/
+
+### Notes
+
+* Object synchronization is currently one way (server to client) only.
+* Client object properties beginning with `$` will be ignored.
 
 #### MIT License
 
