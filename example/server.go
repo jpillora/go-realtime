@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/jpillora/go-realtime"
@@ -61,8 +62,12 @@ func main() {
 		w.Write(indexhtml)
 	})
 
-	log.Printf("Listening on localhost:4000...")
-	http.ListenAndServe(":4000", nil)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "4000"
+	}
+	log.Printf("Listening on localhost:%s...", port)
+	http.ListenAndServe(":"+port, nil)
 }
 
 var indexhtml = []byte(`
