@@ -4,7 +4,7 @@
 (function(window, document) {
 
   if(!window.WebSocket)
-    return alert("go-realtime: this browser does not support WebSockets");
+    return alert("This browser does not support WebSockets");
 
   //realtime protocol version
   var proto = "v1";
@@ -17,12 +17,6 @@
   };
   realtime.proto = proto;
   realtime.online = true;
-  //shortcut
-  realtime.add = function(key, obj, onupdate) {
-    var rt = realtime();
-    rt.add(key, obj, onupdate);
-    return rt;
-  };
 
   //special merge - ignore $properties
   // x <- y
@@ -62,9 +56,9 @@
   function Realtime(url) {
     if(!url)
       url = "/realtime";
-    if(!/^https?:/.test(url))
+    if(!(/^https?:/.test(url)))
       url = loc.protocol + "//" + loc.host + url;
-    if(!/^http(s?:\/\/.+)$/.test(url))
+    if(!(/^http(s?:\/\/.+)$/.test(url)))
       throw "Invalid URL: " + url;
     this.url = "ws" + RegExp.$1;
     this.connect();
@@ -133,7 +127,7 @@
     onmessage: function(event) {
       var str = event.data;
       if (str === "ping") return;
-      
+
       var updates;
       try {
         updates = JSON.parse(str);

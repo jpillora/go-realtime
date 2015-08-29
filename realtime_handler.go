@@ -149,7 +149,7 @@ func (r *Handler) serveWS(conn *websocket.Conn) {
 	//only decode first message
 	if err := json.NewDecoder(conn).Decode(&vs); err != nil {
 		if err != io.EOF {
-			log.Printf("invalid versions obj: %s", err)
+			log.Printf("Invalid versions obj: %s", err)
 		}
 		return
 	}
