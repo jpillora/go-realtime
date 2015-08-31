@@ -3,6 +3,7 @@ package realtime
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/mattbaird/jsonpatch"
@@ -62,7 +63,11 @@ func (o *Object) computeUpdate() bool {
 	}
 	//mark
 	o.checked = true
-	newBytes, _ := json.Marshal(o.value)
+	newBytes, err := json.Marshal(o.value)
+	if err != nil {
+		log.Printf("go-realtime: %s: marshal failed: %s", o.key, err)
+		return false
+	}
 	//calculate change set
 	ops, _ := jsonpatch.CreatePatch(o.bytes, newBytes)
 	if len(o.bytes) > 0 && len(ops) == 0 {
