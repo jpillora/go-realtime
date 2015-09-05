@@ -90,7 +90,7 @@
         this.cleanup();
       if(!this.delay)
         this.delay = 100;
-      this.ws = new WebSocket(this.url, "rt-"+proto);
+      this.ws = new WebSocket(this.url);
       var _this = this;
       events.forEach(function(e) {
         e = "on"+e;
@@ -122,7 +122,10 @@
       this.send("ping");
     },
     subscribe: function() {
-      this.send(JSON.stringify(this.subs));
+      this.send(JSON.stringify({
+        protocol: proto,
+        objectVersions: this.subs
+      }));
     },
     onmessage: function(event) {
       var str = event.data;

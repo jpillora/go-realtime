@@ -10,7 +10,8 @@ import (
 )
 
 type Foo struct {
-	realtime.Object
+	realtime.Object //adds sync state and an Update() method
+
 	A, B int
 	C    []int
 	D    string

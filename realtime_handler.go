@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"reflect"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -133,24 +131,26 @@ func (r *Handler) Update(k string) {
 }
 
 func (r *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Header.Get("Sec-Websocket-Protocol") == "rt-"+proto {
+	if req.Header.Get("Connection") == "Upgrade" &&
+		req.Header.Get("Upgrade") == "websocket" {
 		r.ws.ServeHTTP(w, req)
-	} else if strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
-		JS.ServeHTTP(w, req)
 	} else {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid request"))
+		JS.ServeHTTP(w, req)
 	}
 }
 
 func (r *Handler) serveWS(conn *websocket.Conn) {
-
-	vs := versions{}
-	//only decode first message
-	if err := json.NewDecoder(conn).Decode(&vs); err != nil {
-		if err != io.EOF {
-			log.Printf("Invalid versions obj: %s", err)
-		}
+	handshake := struct {
+		Protocol       string
+		ObjectVersions objectVersions
+	}{}
+	//first message is the rt handshake
+	if err := json.NewDecoder(conn).Decode(&handshake); err != nil {
+		conn.Write([]byte("Invalid rt handshake"))
+		return
+	}
+	if handshake.Protocol != proto {
+		conn.Write([]byte("Invalid rt protocol version"))
 		return
 	}
 	//ready
@@ -159,13 +159,13 @@ func (r *Handler) serveWS(conn *websocket.Conn) {
 		Connected: true,
 		uptime:    time.Now(),
 		conn:      conn,
-		versions:  vs,
+		versions:  handshake.ObjectVersions,
 		pending:   []*update{},
 	}
 
 	//add user and subscribe to each obj
 	r.mut.Lock()
-	for k := range vs {
+	for k := range u.versions {
 		if _, ok := r.objs[k]; !ok {
 			conn.Write([]byte("missing object: " + k))
 			r.mut.Unlock()
@@ -176,7 +176,7 @@ func (r *Handler) serveWS(conn *websocket.Conn) {
 	if r.watchingUsers {
 		r.userEvents <- u
 	}
-	for k := range vs {
+	for k := range u.versions {
 		obj := r.objs[k]
 		obj.subscribers[u.ID] = u
 		//create initial update
@@ -197,7 +197,7 @@ func (r *Handler) serveWS(conn *websocket.Conn) {
 	if r.watchingUsers {
 		r.userEvents <- u
 	}
-	for k := range vs {
+	for k := range u.versions {
 		obj := r.objs[k]
 		delete(obj.subscribers, u.ID)
 	}
@@ -213,9 +213,8 @@ type jsServe []byte
 var JS = jsServe(JSBytes)
 
 func (j jsServe) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	b := []byte(j)
 	w.Header().Set("Content-Encoding", "gzip")
 	w.Header().Set("Content-Type", "text/javascript")
-	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
-	w.Write(b)
+	w.Header().Set("Content-Length", strconv.Itoa(len(JSBytes)))
+	w.Write(JSBytes)
 }

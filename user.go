@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-type versions map[key]int64
+type objectVersions map[key]int64 //maps object key -> version
 
 type User struct {
 	mut       sync.Mutex //protects all user fields
@@ -16,7 +16,7 @@ type User struct {
 	ID        string
 	uptime    time.Time
 	conn      *websocket.Conn
-	versions  versions
+	versions  objectVersions
 	pending   []*update
 }
 
