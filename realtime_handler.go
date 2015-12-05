@@ -17,7 +17,8 @@ import (
 var proto = "v1"
 
 type Config struct {
-	Throttle time.Duration
+	Throttle    time.Duration
+	CheckOrigin bool
 }
 
 type Handler struct {
@@ -46,6 +47,11 @@ func NewHandlerConfig(c Config) *Handler {
 	r.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
+	}
+	if !c.CheckOrigin {
+		r.upgrader.CheckOrigin = func(r *http.Request) bool {
+			return true
+		}
 	}
 	r.objs = map[key]*Object{}
 	r.users = map[string]*User{}
